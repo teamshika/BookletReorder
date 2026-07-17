@@ -10,7 +10,7 @@
     "test": "vitest"
   },
   "dependencies": {
-    "pdf-lib": "^1.17.5",
+    "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^3.11.174"
   },
   "devDependencies": {
