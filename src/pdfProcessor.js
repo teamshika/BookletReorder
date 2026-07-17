@@ -27,52 +27,73 @@ export async function processPdf(pdfBytes, rotationAngle, isRightToLeft) {
   for (let k = 0; k < totalPages; k++) {
     const { sheetIndex, isLeftHalf } = mapping[k];
     
-    // Embed the page from the original document
     const [embeddedPage] = await newDoc.embedPdf(doc, [sheetIndex]);
     
-    // Apply user rotation to calculate final half-page dimensions
-    // When drawing, we rotate the embedded page content
-    const originalWidth = embeddedPage.width;
-    const originalHeight = embeddedPage.height;
+    const W = embeddedPage.width;
+    const H = embeddedPage.height;
     
-    // pdf.js (プレビュー) の回転は時計回り(CW)。pdf-lib は反時計回り(CCW)。
-    // プレビューと一致させるため、CWの角度をCCWに変換する
+    // pdf.js（プレビュー）は時計回り(CW)、pdf-lib は反時計回り(CCW) なので変換
     const ccwAngle = (360 - rotationAngle) % 360;
     
-    const isSideways = ccwAngle === 90 || ccwAngle === 270;
-    const sheetWidth = isSideways ? originalHeight : originalWidth;
-    const sheetHeight = isSideways ? originalWidth : originalHeight;
+    // スキャンページは常に「左右に分割」する。
+    // 回転は出力ページの向きを決めるだけで、分割軸は変わらない。
+    const halfW = W / 2;
     
-    const pageWidth = sheetWidth / 2;
-    const pageHeight = sheetHeight;
-    
-    const newPage = newDoc.addPage([pageWidth, pageHeight]);
-    
-    let xOffset = 0;
-    let yOffset = 0;
-
-    if (ccwAngle === 0) {
-      xOffset = 0;
-      yOffset = 0;
-    } else if (ccwAngle === 90) {
-      xOffset = originalHeight;
-      yOffset = 0;
-    } else if (ccwAngle === 180) {
-      xOffset = originalWidth;
-      yOffset = originalHeight;
-    } else if (ccwAngle === 270) {
-      xOffset = 0;
-      yOffset = originalWidth;
+    // 出力ページのサイズ（回転後の1ページ分）
+    let outW, outH;
+    if (ccwAngle === 90 || ccwAngle === 270) {
+      outW = H;       // 回転後の幅 = 元の高さ
+      outH = halfW;   // 回転後の高さ = 元の半幅
+    } else {
+      outW = halfW;
+      outH = H;
     }
-
-    // 左半分のページを取得するか、右半分のページを取得するかでX座標をシフト
-    if (!isLeftHalf) {
-      xOffset -= pageWidth;
+    
+    const newPage = newDoc.addPage([outW, outH]);
+    
+    // 埋め込みページの描画位置を計算
+    // 各角度で、左半分・右半分が出力ページ内に収まる (x, y) を求める
+    // 回転変換: CCW=0°: (px,py)→(px,py)
+    //           CCW=90°: (px,py)→(x-py, y+px)
+    //           CCW=180°: (px,py)→(x-px, y-py)
+    //           CCW=270°: (px,py)→(x+py, y-px)
+    let xOff, yOff;
+    
+    if (ccwAngle === 0) {
+      // 左半分: px∈[0,W/2] → target_x=px∈[0,W/2] ✓
+      // 右半分: px∈[W/2,W] → shift by -W/2
+      xOff = 0;
+      yOff = 0;
+      if (!isLeftHalf) xOff = -halfW;
+      
+    } else if (ccwAngle === 90) {
+      // target_x = x - py, target_y = y + px
+      // 左半分: y=0 で target_y=px∈[0,W/2]✓, x=H で target_x=H-py∈[0,H]✓
+      // 右半分: y=-W/2 で target_y=px-W/2∈[0,W/2]✓
+      xOff = H;
+      yOff = 0;
+      if (!isLeftHalf) yOff = -halfW;
+      
+    } else if (ccwAngle === 180) {
+      // target_x = x - px, target_y = y - py
+      // 左半分: x=W/2 で target_x=W/2-px∈[0,W/2]✓, y=H で target_y=H-py∈[0,H]✓
+      // 右半分: x=W で target_x=W-px∈[0,W/2] (px∈[W/2,W]) ✓
+      xOff = halfW;
+      yOff = H;
+      if (!isLeftHalf) xOff = W;
+      
+    } else { // ccwAngle === 270
+      // target_x = x + py, target_y = y - px
+      // 左半分: y=W/2 で target_y=W/2-px∈[0,W/2]✓, x=0 で target_x=py∈[0,H]✓
+      // 右半分: y=W で target_y=W-px∈[0,W/2] (px∈[W/2,W]) ✓
+      xOff = 0;
+      yOff = halfW;
+      if (!isLeftHalf) yOff = W;
     }
     
     newPage.drawPage(embeddedPage, {
-      x: xOffset,
-      y: yOffset,
+      x: xOff,
+      y: yOff,
       xScale: 1,
       yScale: 1,
       rotate: degrees(ccwAngle),

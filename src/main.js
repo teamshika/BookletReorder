@@ -4,7 +4,7 @@ import { processPdf } from './pdfProcessor.js';
 
 let currentPdfBytes = null;
 let rotation = 0;
-let isRightToLeft = true;
+let isRightToLeft = false; // デフォルト: 1ページ目が左側（右開き）
 
 document.querySelector('#app').innerHTML = `
   <header>
@@ -33,10 +33,10 @@ document.querySelector('#app').innerHTML = `
         </div>
 
         <div class="control-group">
-          <span class="control-label">1ページ目の位置 (開き方向)</span>
+          <span class="control-label">1ページ目の位置</span>
           <div class="button-group">
-            <button id="leftBtn" class="toggle-btn">左 (左開き)</button>
-            <button id="rightBtn" class="toggle-btn active">右 (右開き)</button>
+            <button id="leftBtn" class="toggle-btn active">左側 (右開き・縦書・マンガ)</button>
+            <button id="rightBtn" class="toggle-btn">右側 (左開き・横書・洋書)</button>
           </div>
         </div>
       </div>
@@ -88,13 +88,13 @@ rotateBtn.addEventListener('click', async () => {
 });
 
 rightBtn.addEventListener('click', () => {
-  isRightToLeft = true;
+  isRightToLeft = true;  // 1ページ目が右側 = 左開き
   rightBtn.classList.add('active');
   leftBtn.classList.remove('active');
 });
 
 leftBtn.addEventListener('click', () => {
-  isRightToLeft = false;
+  isRightToLeft = false; // 1ページ目が左側 = 右開き
   leftBtn.classList.add('active');
   rightBtn.classList.remove('active');
 });
@@ -102,9 +102,9 @@ leftBtn.addEventListener('click', () => {
 cancelBtn.addEventListener('click', () => {
   currentPdfBytes = null;
   rotation = 0;
-  isRightToLeft = true;
-  rightBtn.classList.add('active');
-  leftBtn.classList.remove('active');
+  isRightToLeft = false;
+  leftBtn.classList.add('active');
+  rightBtn.classList.remove('active');
   step2.classList.add('hidden');
   step1.classList.remove('hidden');
   fileInput.value = '';
