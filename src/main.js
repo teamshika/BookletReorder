@@ -35,8 +35,8 @@ document.querySelector('#app').innerHTML = `
         <div class="control-group">
           <span class="control-label">1ページ目の位置 (開き方向)</span>
           <div class="button-group">
-            <button id="rightBtn" class="toggle-btn active">右 (右開き)</button>
             <button id="leftBtn" class="toggle-btn">左 (左開き)</button>
+            <button id="rightBtn" class="toggle-btn active">右 (右開き)</button>
           </div>
         </div>
       </div>
@@ -116,7 +116,6 @@ processBtn.addEventListener('click', async () => {
   try {
     const finalPdfBytes = await processPdf(currentPdfBytes, rotation, isRightToLeft);
     
-    // ダウンロード処理
     const blob = new Blob([finalPdfBytes], { type: 'application/pdf' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -126,7 +125,6 @@ processBtn.addEventListener('click', async () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    
   } catch (error) {
     alert('エラーが発生しました: ' + error.message);
   } finally {

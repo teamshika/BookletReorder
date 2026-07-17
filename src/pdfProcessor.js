@@ -5,16 +5,10 @@ export function calculatePageMapping(sheetCount, isRightToLeft) {
   const mapping = [];
   
   for (let k = 0; k < totalPages; k++) {
-    let sheetIndex;
-    let isLeftHalf;
+    // 両面スキャン（ADF）の場合、裏返すたびに左右が逆転するため交互になる
+    let sheetIndex = k < sheetCount ? k : totalPages - 1 - k;
+    let isLeftHalf = (k % 2 === 0) ? !isRightToLeft : isRightToLeft;
     
-    if (k < sheetCount) {
-      sheetIndex = k;
-      isLeftHalf = isRightToLeft ? false : true;
-    } else {
-      sheetIndex = totalPages - 1 - k;
-      isLeftHalf = isRightToLeft ? true : false;
-    }
     mapping.push({ sheetIndex, isLeftHalf });
   }
   
@@ -41,38 +35,47 @@ export async function processPdf(pdfBytes, rotationAngle, isRightToLeft) {
     const originalWidth = embeddedPage.width;
     const originalHeight = embeddedPage.height;
     
-    let isRotated = rotationAngle === 90 || rotationAngle === 270;
+    // pdf.js (プレビュー) の回転は時計回り(CW)。pdf-lib は反時計回り(CCW)。
+    // プレビューと一致させるため、CWの角度をCCWに変換する
+    const ccwAngle = (360 - rotationAngle) % 360;
     
-    // The visual width of the full sheet after rotation
-    const sheetWidth = isRotated ? originalHeight : originalWidth;
-    const sheetHeight = isRotated ? originalWidth : originalHeight;
+    const isSideways = ccwAngle === 90 || ccwAngle === 270;
+    const sheetWidth = isSideways ? originalHeight : originalWidth;
+    const sheetHeight = isSideways ? originalWidth : originalHeight;
     
-    // Final page is exactly half the sheet
     const pageWidth = sheetWidth / 2;
     const pageHeight = sheetHeight;
     
     const newPage = newDoc.addPage([pageWidth, pageHeight]);
     
-    // We need to calculate drawing coordinates such that the correct half is visible
-    // and the rotation is applied around the center.
-    // For simplicity, pdf-lib's drawPage accepts rotation and x/y.
-    // To crop the correct half, we position the embedded page appropriately.
-    
-    // Center point of the new page
-    const centerX = pageWidth / 2;
-    const centerY = pageHeight / 2;
-    
-    // X offset based on which half we want
-    // If we want the left half of the sheet, the center of the sheet should be at (pageWidth, centerY)
-    // If we want the right half, the center of the sheet should be at (0, centerY)
-    const sheetCenterX = isLeftHalf ? pageWidth : 0;
+    let xOffset = 0;
+    let yOffset = 0;
+
+    if (ccwAngle === 0) {
+      xOffset = 0;
+      yOffset = 0;
+    } else if (ccwAngle === 90) {
+      xOffset = originalHeight;
+      yOffset = 0;
+    } else if (ccwAngle === 180) {
+      xOffset = originalWidth;
+      yOffset = originalHeight;
+    } else if (ccwAngle === 270) {
+      xOffset = 0;
+      yOffset = originalWidth;
+    }
+
+    // 左半分のページを取得するか、右半分のページを取得するかでX座標をシフト
+    if (!isLeftHalf) {
+      xOffset -= pageWidth;
+    }
     
     newPage.drawPage(embeddedPage, {
-      x: sheetCenterX,
-      y: centerY,
+      x: xOffset,
+      y: yOffset,
       xScale: 1,
       yScale: 1,
-      rotate: degrees(rotationAngle),
+      rotate: degrees(ccwAngle),
       opacity: 1,
     });
   }
