@@ -21,81 +21,70 @@ export async function processPdf(pdfBytes, rotationAngle, isRightToLeft) {
   const totalPages = sheetCount * 2;
   
   const newDoc = await PDFDocument.create();
-  
   const mapping = calculatePageMapping(sheetCount, isRightToLeft);
   
   for (let k = 0; k < totalPages; k++) {
     const { sheetIndex, isLeftHalf } = mapping[k];
     
-    // 元のページが保持している回転角度 (/Rotate) を取得
     const srcPage = doc.getPage(sheetIndex);
-    const baseRotation = srcPage.getRotation().angle || 0;
+    const baseRotation = srcPage.getRotation().angle || 0; // PDF本来の回転角度 (0, 90, 180, 270)
     
     const [embeddedPage] = await newDoc.embedPdf(doc, [sheetIndex]);
-    
     const W = embeddedPage.width;
     const H = embeddedPage.height;
     
-    // 元のページの回転角度 + UIでユーザーが指定した回転角度 (時計回り CW)
-    const totalCwRotation = (baseRotation + rotationAngle) % 360;
+    // 1. PDF本来の回転 (baseRotation) を適用した後の視覚的な見開き寸法
+    const isBaseSideways = baseRotation === 90 || baseRotation === 270;
+    const sheetVisW = isBaseSideways ? H : W;
+    const sheetVisH = isBaseSideways ? W : H;
     
-    // pdf.js（プレビュー）は時計回り(CW)、pdf-lib は反時計回り(CCW) なので変換
-    const ccwAngle = (360 - totalCwRotation) % 360;
+    // 2. 視覚的な1ページ分の寸法（見開き幅の半分）
+    const pageVisW = sheetVisW / 2;
+    const pageVisH = sheetVisH;
     
-    // スキャンページは常に「左右に分割」する。
-    // 回転は出力ページの向きを決めるだけで、分割軸は変わらない。
-    const halfW = W / 2;
-    
-    // 出力ページのサイズ（回転後の1ページ分）
-    let outW, outH;
-    if (ccwAngle === 90 || ccwAngle === 270) {
-      outW = H;       // 回転後の幅 = 元の高さ
-      outH = halfW;   // 回転後の高さ = 元の半幅
-    } else {
-      outW = halfW;
-      outH = H;
-    }
+    // 3. ユーザーが画面で追加指定した回転 (rotationAngle: CW) を適用した最終出力寸法
+    const isUserSideways = rotationAngle === 90 || rotationAngle === 270;
+    const outW = isUserSideways ? pageVisH : pageVisW;
+    const outH = isUserSideways ? pageVisW : pageVisH;
     
     const newPage = newDoc.addPage([outW, outH]);
     
-    // 埋め込みページの描画位置を計算
-    // 各角度で、左半分・右半分が出力ページ内に収まる (x, y) を求める
-    // 回転変換: CCW=0°: (px,py)→(px,py)
-    //           CCW=90°: (px,py)→(x-py, y+px)
-    //           CCW=180°: (px,py)→(x-px, y-py)
-    //           CCW=270°: (px,py)→(x+py, y-px)
-    let xOff, yOff;
+    // 4. ベース回転に応じて、生データ (px, py) 上で抽出する範囲を決定
+    let pxMin = 0, pxMax = W;
+    let pyMin = 0, pyMax = H;
     
+    if (baseRotation === 0) {
+      if (isLeftHalf) { pxMin = 0; pxMax = W / 2; }
+      else            { pxMin = W / 2; pxMax = W; }
+    } else if (baseRotation === 90) {
+      if (isLeftHalf) { pyMin = 0; pyMax = H / 2; }
+      else            { pyMin = H / 2; pyMax = H; }
+    } else if (baseRotation === 180) {
+      if (isLeftHalf) { pxMin = W / 2; pxMax = W; }
+      else            { pxMin = 0; pxMax = W / 2; }
+    } else if (baseRotation === 270) {
+      if (isLeftHalf) { pyMin = H / 2; pyMax = H; }
+      else            { pyMin = 0; pyMax = H / 2; }
+    }
+    
+    // 5. 合計回転角度 (CW) と pdf-lib 用の反時計回り角度 (CCW)
+    const totalCwRotation = (baseRotation + rotationAngle) % 360;
+    const ccwAngle = (360 - totalCwRotation) % 360;
+    
+    // 6. ccwAngle に応じて (pxMin..pxMax, pyMin..pyMax) が newPage (0..outW, 0..outH) に収まるオフセットを計算
+    let xOff = 0, yOff = 0;
     if (ccwAngle === 0) {
-      // 左半分: px∈[0,W/2] → target_x=px∈[0,W/2] ✓
-      // 右半分: px∈[W/2,W] → shift by -W/2
-      xOff = 0;
-      yOff = 0;
-      if (!isLeftHalf) xOff = -halfW;
-      
+      xOff = -pxMin;
+      yOff = -pyMin;
     } else if (ccwAngle === 90) {
-      // target_x = x - py, target_y = y + px
-      // 左半分: y=0 で target_y=px∈[0,W/2]✓, x=H で target_x=H-py∈[0,H]✓
-      // 右半分: y=-W/2 で target_y=px-W/2∈[0,W/2]✓
-      xOff = H;
-      yOff = 0;
-      if (!isLeftHalf) yOff = -halfW;
-      
+      xOff = pyMax;
+      yOff = -pxMin;
     } else if (ccwAngle === 180) {
-      // target_x = x - px, target_y = y - py
-      // 左半分: x=W/2 で target_x=W/2-px∈[0,W/2]✓, y=H で target_y=H-py∈[0,H]✓
-      // 右半分: x=W で target_x=W-px∈[0,W/2] (px∈[W/2,W]) ✓
-      xOff = halfW;
-      yOff = H;
-      if (!isLeftHalf) xOff = W;
-      
-    } else { // ccwAngle === 270
-      // target_x = x + py, target_y = y - px
-      // 左半分: y=W/2 で target_y=W/2-px∈[0,W/2]✓, x=0 で target_x=py∈[0,H]✓
-      // 右半分: y=W で target_y=W-px∈[0,W/2] (px∈[W/2,W]) ✓
-      xOff = 0;
-      yOff = halfW;
-      if (!isLeftHalf) yOff = W;
+      xOff = pxMax;
+      yOff = pyMax;
+    } else if (ccwAngle === 270) {
+      xOff = -pyMin;
+      yOff = pxMax;
     }
     
     newPage.drawPage(embeddedPage, {
