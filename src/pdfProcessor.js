@@ -27,13 +27,20 @@ export async function processPdf(pdfBytes, rotationAngle, isRightToLeft) {
   for (let k = 0; k < totalPages; k++) {
     const { sheetIndex, isLeftHalf } = mapping[k];
     
+    // 元のページが保持している回転角度 (/Rotate) を取得
+    const srcPage = doc.getPage(sheetIndex);
+    const baseRotation = srcPage.getRotation().angle || 0;
+    
     const [embeddedPage] = await newDoc.embedPdf(doc, [sheetIndex]);
     
     const W = embeddedPage.width;
     const H = embeddedPage.height;
     
+    // 元のページの回転角度 + UIでユーザーが指定した回転角度 (時計回り CW)
+    const totalCwRotation = (baseRotation + rotationAngle) % 360;
+    
     // pdf.js（プレビュー）は時計回り(CW)、pdf-lib は反時計回り(CCW) なので変換
-    const ccwAngle = (360 - rotationAngle) % 360;
+    const ccwAngle = (360 - totalCwRotation) % 360;
     
     // スキャンページは常に「左右に分割」する。
     // 回転は出力ページの向きを決めるだけで、分割軸は変わらない。
