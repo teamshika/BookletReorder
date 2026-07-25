@@ -8,7 +8,10 @@ export async function initViewer(pdfBytes, canvas, rotation) {
   const pdf = await loadingTask.promise;
   const page = await pdf.getPage(1);
   
-  const viewport = page.getViewport({ scale: 1.0, rotation: rotation });
+  // ページの元々の回転角度 (page.rotate) に UIで追加指定された回転角度 (rotation) を加算
+  const totalRotation = ((page.rotate || 0) + rotation) % 360;
+  
+  const viewport = page.getViewport({ scale: 1.0, rotation: totalRotation });
   
   // Scale down if it's too large for the screen
   const MAX_WIDTH = 600;
@@ -17,7 +20,7 @@ export async function initViewer(pdfBytes, canvas, rotation) {
     scale = MAX_WIDTH / viewport.width;
   }
   
-  const scaledViewport = page.getViewport({ scale: scale, rotation: rotation });
+  const scaledViewport = page.getViewport({ scale: scale, rotation: totalRotation });
   
   const ctx = canvas.getContext('2d');
   canvas.width = scaledViewport.width;
